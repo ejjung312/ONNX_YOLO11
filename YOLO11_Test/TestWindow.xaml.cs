@@ -1,7 +1,10 @@
 ﻿using OpenCvSharp;
 using OpenCvSharp.WpfExtensions;
 using SkiaSharp;
+using System.IO;
+using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using YoloDotNet;
 using YoloDotNet.Enums;
@@ -12,8 +15,9 @@ namespace YOLO11_Test
 {
     public partial class TestWindow : System.Windows.Window
     {
-        private bool _isPlaying = false;
+        private Dispatcher _dispatcher;
         private CancellationTokenSource _cancellationTokenSource;
+        private CancellationToken _cancellationToken;
 
         string modelPath1 = "Onnx/yolo11n.onnx";
         string modelPath2 = "Onnx/license_plate_best.onnx";
@@ -24,11 +28,14 @@ namespace YOLO11_Test
         string videoPath1 = "Onnx/enter.mp4";
         string videoPath2 = "Onnx/parking2.mp4";
 
+        Mat frame;
         Yolo yolo;
 
         public TestWindow()
         {
             InitializeComponent();
+
+            frame = new Mat();
 
             // Instantiate a new Yolo object
             yolo = new Yolo(new YoloOptions
@@ -39,27 +46,18 @@ namespace YOLO11_Test
                 GpuId = 0,                              // Select Gpu by id. Default = 0
                 PrimeGpu = false,                       // Pre-allocate GPU before first inference. Default = false
             });
+
+            _dispatcher = Dispatcher.CurrentDispatcher;
+
+            PlayVideo();
         }
 
-        private async void PlayVideoButton_Click(object sender, RoutedEventArgs e)
+        private void PlayVideo()
         {
-            if (_isPlaying) return;
-
-            _isPlaying = true;
             _cancellationTokenSource = new CancellationTokenSource();
+            _cancellationToken = _cancellationTokenSource.Token;
 
-            try
-            {
-                await PlayVideoAsync(videoPath1, _cancellationTokenSource.Token);
-            }
-            catch (TaskCanceledException)
-            {
-                // 작업이 취소되었을 때 발생하는 예외는 무시
-            }
-            finally
-            {
-                _isPlaying = false;
-            }
+            Task.Run(() => PlayVideoAsync2(_cancellationToken), _cancellationToken);
         }
 
         private Mat prediction3(Mat frame)
@@ -115,65 +113,28 @@ namespace YOLO11_Test
             return mat;
         }
 
-        private async Task PlayVideoAsync(string videoPath, CancellationToken cancellationToken)
+        private async Task PlayVideoAsync2(CancellationToken cancellationToken)
         {
-            await Task.Run(() =>
+            using var capture = new VideoCapture(videoPath1);
+
+            using var stream = new MemoryStream();
+
+            if (!capture.IsOpened())
             {
-                using var capture = new VideoCapture(videoPath);
-
-                if (!capture.IsOpened())
+                Dispatcher.Invoke(() =>
                 {
-                    Dispatcher.Invoke(() =>
-                    {
-                        MessageBox.Show("비디오 파일을 열 수 없습니다.");
-                    });
-                    return;
-                }
+                    MessageBox.Show("비디오 파일을 열 수 없습니다.");
+                });
+                return;
+            }
 
-                Mat frame = new Mat();
-                while (_isPlaying && capture.Read(frame))
-                {
-                    if (cancellationToken.IsCancellationRequested)
-                        break;
+            while (cancellationToken.IsCancellationRequested is false && capture.Read(frame))
+            {
+                if (frame.Empty())
+                    break;
 
-                    if (frame.Empty())
-                        break;
-
-                    // UI 스레드에서 이미지를 업데이트
-                    try
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            if (VideoImage != null)
-                            {
-                                //VideoImage.Source = BitmapSourceConverter.ToBitmapSource(frame);
-                                VideoImage.Source = BitmapSourceConverter.ToBitmapSource(prediction3(frame));
-                            }
-                        });
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"UI 업데이트 중 오류 발생: {ex.Message}");
-                        break;
-                    }
-
-                    // 프레임 속도에 맞춰 대기
-                    int delay = (int)(1000 / capture.Fps);
-                    Task.Delay(delay, cancellationToken).Wait();
-                }
-            }, cancellationToken);
-        }
-
-        private void StopVideoButton_Click(object sender, RoutedEventArgs e)
-        {
-            _isPlaying = false;
-            _cancellationTokenSource?.Cancel();
-
-            yolo?.Dispose();
+                await _dispatcher.InvokeAsync(async () => VideoImage.Source = BitmapSourceConverter.ToBitmapSource(prediction3(frame)));
+            }
         }
 
         protected override void OnClosed(EventArgs e)
@@ -181,10 +142,12 @@ namespace YOLO11_Test
             base.OnClosed(e);
 
             // 프로그램 종료 시 모든 비동기 작업 취소
-            _isPlaying = false;
             _cancellationTokenSource?.Cancel();
+            frame.Dispose();
 
             yolo?.Dispose();
+
+            VideoImage.Source = null;
         }
     }
 }

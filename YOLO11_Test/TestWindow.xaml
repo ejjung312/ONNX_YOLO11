@@ -8,7 +8,5 @@
         Title="TestWindow" Height="450" Width="800">
     <Grid>
         <Image Name="VideoImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
-        <Button Name="PlayVideoButton" Content="Play Video" HorizontalAlignment="Left" VerticalAlignment="Bottom" Click="PlayVideoButton_Click" />
-        <Button Name="StopVideoButton" Content="Stop Video" HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="StopVideoButton_Click" />
     </Grid>
 </Window>
