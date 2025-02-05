@@ -5,14 +5,16 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:YOLO11_Test"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800" Closing="Window_Closing" Closed="Window_Closed">
+        Title="MainWindow" Height="450" Width="800" Closed="Window_Closed">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="267*"/>
             <ColumnDefinition Width="133*"/>
         </Grid.ColumnDefinitions>
         <Image x:Name="VideoImage" Grid.ColumnSpan="2"/>
+        <!--<Canvas x:Name="VideoCanvas" Grid.ColumnSpan="2"/>-->
         <Button x:Name="StartButton" Content="Start" Width="100" Height="30" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,0,10" Click="StartButton_Click"/>
         <Button x:Name="StopButton" Content="Stop" Width="100" Height="30" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" Click="StopButton_Click" Grid.Column="1"/>
+        
     </Grid>
 </Window>

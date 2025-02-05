@@ -1,8 +1,12 @@
-﻿using Onnx.Yolo;
+﻿using YoloDotNet;
+using YoloDotNet.Enums;
+using YoloDotNet.Models;
+using YoloDotNet.Extensions;
+using SkiaSharp;
 using OpenCvSharp;
-using OpenCvSharp.WpfExtensions;
 using System.Windows.Threading;
-
+using OpenCvSharp.WpfExtensions;
+using System.Windows.Media.Imaging;
 namespace YOLO11_Test
 {
     /// <summary>
@@ -14,74 +18,111 @@ namespace YOLO11_Test
         private Mat _frame;
         private DispatcherTimer _timer;
 
+        string modelPath1 = "yolo11n.onnx";
+        string modelPath2 = "license_plate.best.onnx";
+
+        string imagePath1 = "enter1.jpg";
+
+        string videoPath = "enter.mp4";
+
+        Yolo yolo;
+
         public MainWindow()
         {
             InitializeComponent();
 
-            //_capture = new VideoCapture();
-            //_frame = new Mat();
-            //_timer = new DispatcherTimer();
+            _capture = new VideoCapture();
+            _frame = new Mat();
+            _timer = new DispatcherTimer();
 
-            //_timer.Interval = TimeSpan.FromMilliseconds(33);
-            //_timer.Tick += timer_Tick;
+            _timer.Interval = TimeSpan.FromMilliseconds(1);
+            _timer.Tick += timer_Tick;
 
-            prediction();
+            // Instantiate a new Yolo object
+            yolo = new Yolo(new YoloOptions
+            {
+                OnnxModel = modelPath1,                 // Your Yolo model in onnx format
+                ModelType = ModelType.ObjectDetection,  // Set your model type
+                Cuda = false,                           // Use CPU or CUDA for GPU accelerated inference. Default = true
+                GpuId = 0,                              // Select Gpu by id. Default = 0
+                PrimeGpu = false,                       // Pre-allocate GPU before first inference. Default = false
+            });
+
+            //prediction();
+            //prediction2();
+            //prediction3();
         }
 
-        private async void prediction()
+        private Mat prediction3(Mat frame)
         {
-            string modelPathTest = "sample-model.onnx";
-            string modelPath1 = "yolo11n.onnx";
-            string modelPath2 = "license_plate.best.onnx";
+            // OpenCV Mat을 BGRA로 변환 (SkiaSharp은 기본적으로 BGRA 사용)
+            Mat bgraMat = new Mat();
+            Cv2.CvtColor(frame, bgraMat, ColorConversionCodes.BGR2BGRA);
 
-            string imagePathTest = "simple_test.jpg";
-            string imagePath1 = "enter1.jpg";
+            // Mat 데이터를 바이트 배열로 변환
+            //byte[] pixelData = new byte[bgraMat.Rows * bgraMat.Cols * bgraMat.ElemSize()];
+            ////bgraMat.GetArray(0, 0, pixelData);
+            //bgraMat.GetArray(out pixelData);
 
-            string videoPath = "enter.mp4";
+            // Mat의 데이터 포인터 가져오기 (nint 사용)
+            nint pixelPtr = bgraMat.Data;
 
-            var detector = new YoloDetector(modelPath1);
-            using (var image = Cv2.ImRead(imagePath1))
+            // SKBitmap 생성
+            var skBitmap = new SKBitmap(frame.Width, frame.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            //skBitmap.InstallPixels(skBitmap.Info, pixelData, skBitmap.RowBytes);
+            skBitmap.InstallPixels(skBitmap.Info, pixelPtr, skBitmap.RowBytes);
+
+            // SKImage로 변환
+            using var image = SKImage.FromBitmap(skBitmap);
+
+            // Load image
+            //using var image = SKImage.FromEncodedData(imagePath1);
+            //using var image = Cv2.ImRead(imagePath1);
+
+            // Run inference and get the results
+            var results = yolo.RunObjectDetection(image, confidence: 0.25, iou: 0.7);
+
+            // Draw results
+            using var resultImage = image.Draw(results);
+
+            using var bitmap = SKBitmap.FromImage(resultImage);
+
+            // SKBitmap 데이터를 바이트 배열로 변환
+            IntPtr pixels = bitmap.GetPixels();
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+            int channels = bitmap.ColorType == SKColorType.Gray8 ? 1 : 4; // RGBA 또는 Grayscale
+
+            // Mat 객체 생성
+            //Mat mat = new Mat(height, width, channels == 4 ? MatType.CV_8UC4 : MatType.CV_8UC1, pixels);
+            Mat mat = Mat.FromPixelData(height, width, channels == 4 ? MatType.CV_8UC4 : MatType.CV_8UC1, pixels);
+
+            // OpenCV에서는 기본적으로 BGR을 사용하므로 RGBA → BGR 변환
+            if (channels == 4)
             {
-                //float ratio = 0.0f;
-                //Point diff1 = new Point();
-                //Point diff2 = new Point();
-                //var letter_image = YoloDetector.CreateLetterbox(image, new Size(640, 384), new Scalar(114, 114, 114), out ratio, out diff1, out diff2);
-
-                var result = detector.objectDetection(image);
-
-                //Cv2.NamedWindow("SOURCE", WindowFlags.Normal);
-                //Cv2.ImShow("SOURCE", image);
-                //Cv2.NamedWindow("LETTERBOX", WindowFlags.Normal);
-                //Cv2.ImShow("LETTERBOX", letter_image);
-                using (var dispImage = image.Clone())
-                {
-                    foreach (var obj in result)
-                    {
-                        Cv2.Rectangle(dispImage, new Point(obj.Box.Xmin, obj.Box.Ymin), new Point(obj.Box.Xmax, obj.Box.Ymax), new Scalar(0, 0, 255), 2);
-                        Cv2.PutText(dispImage, obj.Label, new Point(obj.Box.Xmin, obj.Box.Ymin - 5), HersheyFonts.HersheySimplex, 1, new Scalar(0, 0, 255), 2);
-                    }
-                    Cv2.NamedWindow("RESULT", WindowFlags.Normal);
-                    Cv2.ImShow("RESULT", dispImage);
-                }
-                Cv2.WaitKey();
+                Cv2.CvtColor(mat, mat, ColorConversionCodes.RGBA2BGR);
             }
+
+            return mat;
+
+            //Cv2.ImShow("Result", mat);
+
+            // Save to file
+            //resultImage.Save(@"save\as\new_image.jpg", SKEncodedImageFormat.Jpeg, 80);
+
+            //System.Windows.MessageBox.Show("성공");
         }
 
         private void timer_Tick(object? sender, EventArgs e)
         {
             if (_capture.IsOpened() && _capture.Read(_frame) && !_frame.Empty())
             {
-                VideoImage.Source = _frame.ToBitmapSource();
+                VideoImage.Source = prediction3(_frame).ToBitmapSource();
             }
             else
             {
                 _timer.Stop();
             }
-        }
-
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            
         }
 
         private void StartButton_Click(object sender, System.Windows.RoutedEventArgs e)
@@ -107,15 +148,21 @@ namespace YOLO11_Test
             _timer.Stop();
             _capture.Release();
             _frame.Dispose();
+
+            yolo.Dispose();
+
             VideoImage.Source = null;
         }
 
         private void Window_Closed(object sender, EventArgs e)
         {
-            //_timer.Stop();
-            //_capture.Release();
-            //_frame.Dispose();
-            base.OnClosed(e);
+            _timer.Stop();
+            _capture.Release();
+            _frame.Dispose();
+
+            yolo.Dispose();
+
+            VideoImage.Source = null;
         }
     }
 }
